@@ -128,6 +128,7 @@ public abstract class ReadTask extends PerfTask {
         if (hits != null) {
           final String printHitsField = getRunData().getConfig().get("print.hits.field", null);
           if (printHitsField != null && printHitsField.length() > 0) {
+            System.out.println(q);
             System.out.println("totalHits = " + hits.totalHits);
             System.out.println("maxDoc()  = " + reader.maxDoc());
             System.out.println("numDocs() = " + reader.numDocs());

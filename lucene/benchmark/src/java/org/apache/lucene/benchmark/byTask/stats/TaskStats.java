@@ -17,7 +17,10 @@
 package org.apache.lucene.benchmark.byTask.stats;
 
 
+import java.io.IOException;
+
 import org.apache.lucene.benchmark.byTask.tasks.PerfTask;
+import org.apache.lucene.store.Directory;
 
 /**
  * Statistics for a task run. 
@@ -61,6 +64,8 @@ public class TaskStats implements Cloneable {
    * Used when summing up on few runs/instances of similar tasks.
    */
   private int numRuns = 1;
+
+  private long dirFilesLength;
   
   /**
    * Create a run data for a task that is starting now.
@@ -90,6 +95,16 @@ public class TaskStats implements Cloneable {
     }
     this.numParallelTasks = numParallelTasks;
     this.count = count;
+    try {
+      final Directory directory = task.getRunData().getDirectory();
+      long sum=0;
+      for (String f : directory.listAll()) {
+        sum += directory.fileLength(f);
+      }
+      dirFilesLength = sum;
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
   
   private int[] countsByTime;
@@ -115,6 +130,11 @@ public class TaskStats implements Cloneable {
     return taskRunNum;
   }
 
+  /** directory size in bytes */
+  public long getDirFilesLength() {
+    return dirFilesLength;
+  }
+  
   /* (non-Javadoc)
    * @see java.lang.Object#toString()
    */
@@ -191,6 +211,8 @@ public class TaskStats implements Cloneable {
       round = -1; // no meaning if aggregating tasks of different round. 
     }
 
+    dirFilesLength += stat2.getDirFilesLength();
+    
     if (countsByTime != null && stat2.countsByTime != null) {
       if (countsByTimeStepMSec != stat2.countsByTimeStepMSec) {
         throw new IllegalStateException("different by-time msec step");
@@ -202,6 +224,7 @@ public class TaskStats implements Cloneable {
         countsByTime[i] += stat2.countsByTime[i];
       }
     }
+    dirFilesLength = Math.max(dirFilesLength, stat2.dirFilesLength);
   }
 
   /* (non-Javadoc)

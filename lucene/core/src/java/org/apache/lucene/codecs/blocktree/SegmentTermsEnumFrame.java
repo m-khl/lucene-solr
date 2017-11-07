@@ -423,7 +423,7 @@ final class SegmentTermsEnumFrame {
       }
       // metadata 
       for (int i = 0; i < ste.fr.longsSize; i++) {
-        longs[i] = bytesReader.readVLong();
+        longs[i] = bytesReader.readZLong();
       }
       ste.fr.parent.postingsReader.decodeTerm(longs, bytesReader, ste.fr.fieldInfo, state, absolute);
 

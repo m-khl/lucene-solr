@@ -293,7 +293,7 @@ final class IntersectTermsEnumFrame {
       }
       // metadata 
       for (int i = 0; i < ite.fr.longsSize; i++) {
-        longs[i] = bytesReader.readVLong();
+        longs[i] = bytesReader.readZLong();
       }
       ite.fr.parent.postingsReader.decodeTerm(longs, bytesReader, ite.fr.fieldInfo, termState, absolute);
 

@@ -67,15 +67,16 @@ public abstract class ReportTask extends PerfTask {
   protected static final String ELAPSED =     "  elapsedSec";
   protected static final String USEDMEM =     "    avgUsedMem";
   protected static final String TOTMEM =      "    avgTotalMem";
+  private static final String DIRSIZE = " directory size, Mb";
   protected static final String COLS[] = {
       RUNCNT,
       RECCNT,
       RECSEC,
       ELAPSED,
       USEDMEM,
-      TOTMEM
+      TOTMEM,
+      DIRSIZE
   };
-
   /**
    * Compute a title line for a report table
    * @param longestOp size of longest op name in the table
@@ -130,6 +131,7 @@ public abstract class ReportTask extends PerfTask {
     sb.append(Format.format(2, (float) stat.getElapsed() / 1000, ELAPSED));
     sb.append(Format.format(0, (float) stat.getMaxUsedMem() / stat.getNumRuns(), USEDMEM)); 
     sb.append(Format.format(0, (float) stat.getMaxTotMem() / stat.getNumRuns(), TOTMEM));
+    sb.append(Format.format(2, (float) (stat.getDirFilesLength() / (1024*1024)), DIRSIZE));
     return sb.toString();
   }
 

@@ -116,6 +116,10 @@ public abstract class PushPostingsWriterBase extends PostingsWriterBase {
     return 0;
   }
 
+  public FieldInfo getField() {
+    return fieldInfo;
+  }
+  
   @Override
   public final BlockTermState writeTerm(BytesRef term, TermsEnum termsEnum, FixedBitSet docsSeen) throws IOException {
     startTerm();

@@ -36,6 +36,13 @@ public abstract class StopwordAnalyzerBase extends Analyzer {
    */
   protected final CharArraySet stopwords;
 
+  public StopwordAnalyzerBase(ReuseStrategy reuseStrategy, final CharArraySet stopwords) {
+    super(reuseStrategy);
+    // analyzers should use char array set for stopwords!
+    this.stopwords = stopwords == null ? CharArraySet.EMPTY_SET : CharArraySet
+        .unmodifiableSet(CharArraySet.copy(stopwords));
+  }
+
   /**
    * Returns the analyzer's stopword set or an empty set if the analyzer has no
    * stopwords
@@ -54,9 +61,7 @@ public abstract class StopwordAnalyzerBase extends Analyzer {
    *          the analyzer's stopword set
    */
   protected StopwordAnalyzerBase(final CharArraySet stopwords) {
-    // analyzers should use char array set for stopwords!
-    this.stopwords = stopwords == null ? CharArraySet.EMPTY_SET : CharArraySet
-        .unmodifiableSet(CharArraySet.copy(stopwords));
+      this(GLOBAL_REUSE_STRATEGY,stopwords);
   }
 
   /**

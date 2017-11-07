@@ -188,7 +188,7 @@ import org.apache.lucene.util.fst.Util;
  * @see BlockTreeTermsReader
  * @lucene.experimental
  */
-public final class BlockTreeTermsWriter extends FieldsConsumer {
+public class BlockTreeTermsWriter extends FieldsConsumer {
 
   /** Suggested default value for the {@code
    *  minItemsInBlock} parameter to {@link
@@ -330,7 +330,8 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
       }
 
       TermsEnum termsEnum = terms.iterator();
-      TermsWriter termsWriter = new TermsWriter(fieldInfos.fieldInfo(field));
+      final FieldInfo fieldInfo = fieldInfos.fieldInfo(field);
+      TermsWriter termsWriter = createTermsWriter(fieldInfo);
       while (true) {
         BytesRef term = termsEnum.next();
         //if (DEBUG) System.out.println("BTTW: next term " + term);
@@ -347,6 +348,10 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
 
       //if (DEBUG) System.out.println("\nBTTW.write done seg=" + segment + " field=" + field);
     }
+  }
+
+  protected TermsWriter createTermsWriter(final FieldInfo fieldInfo) {
+    return new TermsWriter(fieldInfo);
   }
   
   static long encodeOutput(long fp, boolean hasTerms, boolean isFloor) {
@@ -508,11 +513,11 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
 
   static final BytesRef EMPTY_BYTES_REF = new BytesRef();
 
-  class TermsWriter {
+  public class TermsWriter {
     private final FieldInfo fieldInfo;
     private final int longsSize;
     private long numTerms;
-    final FixedBitSet docsSeen;
+    protected final FixedBitSet docsSeen;
     long sumTotalTermFreq;
     long sumDocFreq;
     long indexStartFP;
@@ -723,8 +728,8 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
           // Write term meta data
           postingsWriter.encodeTerm(longs, bytesWriter, fieldInfo, state, absolute);
           for (int pos = 0; pos < longsSize; pos++) {
-            assert longs[pos] >= 0;
-            metaWriter.writeVLong(longs[pos]);
+            //assert longs[pos] >= 0;
+            metaWriter.writeZLong(longs[pos]);
           }
           bytesWriter.writeTo(metaWriter);
           bytesWriter.reset();
@@ -774,8 +779,8 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
             // Write term meta data
             postingsWriter.encodeTerm(longs, bytesWriter, fieldInfo, state, absolute);
             for (int pos = 0; pos < longsSize; pos++) {
-              assert longs[pos] >= 0;
-              metaWriter.writeVLong(longs[pos]);
+              //assert longs[pos] >= 0;
+              metaWriter.writeZLong(longs[pos]);
             }
             bytesWriter.writeTo(metaWriter);
             bytesWriter.reset();
@@ -842,7 +847,7 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
       return new PendingBlock(prefix, startFP, hasTerms, isFloor, floorLeadLabel, subIndices);
     }
 
-    TermsWriter(FieldInfo fieldInfo) {
+    public TermsWriter(FieldInfo fieldInfo) {
       this.fieldInfo = fieldInfo;
       assert fieldInfo.getIndexOptions() != IndexOptions.NONE;
       docsSeen = new FixedBitSet(maxDoc);
@@ -861,7 +866,7 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
       }
       */
 
-      BlockTermState state = postingsWriter.writeTerm(text, termsEnum, docsSeen);
+      BlockTermState state = writePosting(text, termsEnum);
       if (state != null) {
 
         assert state.docFreq != 0;
@@ -880,6 +885,10 @@ public final class BlockTreeTermsWriter extends FieldsConsumer {
         }
         lastPendingTerm = term;
       }
+    }
+
+    protected BlockTermState writePosting(BytesRef text, TermsEnum termsEnum) throws IOException {
+      return postingsWriter.writeTerm(text, termsEnum, docsSeen);
     }
 
     /** Pushes the new term to the top of the stack, and writes new blocks. */

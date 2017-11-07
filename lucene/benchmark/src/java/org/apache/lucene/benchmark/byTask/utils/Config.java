@@ -423,7 +423,7 @@ public class Config {
         } else if (a instanceof String[]) {
           String ad[] = (String[]) a;
           int n = roundNum % ad.length;
-          sb.append(ad[n]);
+          sb.append(stripPackage(ad[n]));
         } else {
           boolean ab[] = (boolean[]) a;
           int n = roundNum % ab.length;
@@ -432,6 +432,14 @@ public class Config {
       }
     }
     return sb.toString();
+  }
+
+  private String stripPackage(String val) {
+    int dot = val.lastIndexOf(".");
+    if (dot>0) {
+      return " "+val.substring(dot+1);
+    } else
+      return val;
   }
 
   /**

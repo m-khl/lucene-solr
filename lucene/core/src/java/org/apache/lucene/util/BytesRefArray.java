@@ -170,7 +170,7 @@ public final class BytesRefArray implements SortableBytesRefArray {
   /**
    * sugar for {@link #iterator(Comparator)} with a <code>null</code> comparator
    */
-  public BytesRefIterator iterator() {
+  public BytesRefIdxIterator iterator() {
     return iterator(null);
   }
   
@@ -189,22 +189,49 @@ public final class BytesRefArray implements SortableBytesRefArray {
    * </p>
    */
   @Override
-  public BytesRefIterator iterator(final Comparator<BytesRef> comp) {
+  public BytesRefIdxIterator iterator(final Comparator<BytesRef> comp) {
     final BytesRefBuilder spare = new BytesRefBuilder();
     final BytesRef result = new BytesRef();
     final int size = size();
     final int[] indices = comp == null ? null : sort(comp);
-    return new BytesRefIterator() {
-      int pos = 0;
-      
-      @Override
-      public BytesRef next() {
-        if (pos < size) {
-          setBytesRef(spare, result, indices == null ? pos++ : indices[pos++]);
-          return result;
-        }
-        return null;
-      }
-    };
+    return new BytesRefIdxIter(indices, result, spare, size);
   }
+
+  private class BytesRefIdxIter implements BytesRefIdxIterator {
+    private final int[] indices;
+    private final BytesRef result;
+    private final BytesRefBuilder spare;
+    private final int size;
+    int pos = 0;
+    private int index = -1;
+
+    private BytesRefIdxIter(int[] indices, BytesRef result, BytesRefBuilder spare, int size) {
+      this.indices = indices;
+      this.result = result;
+      this.spare = spare;
+      this.size = size;
+    }
+
+    @Override
+    public BytesRef next() {
+      if (pos < size) {
+        index = indices == null ? pos++ : indices[pos++];
+        setBytesRef(spare, result, index);
+        return result;
+      }
+      return null;
+    }
+
+    @Override
+    public int index() {
+      return index;
+    }
+
+  }
+
+  public interface BytesRefIdxIterator extends BytesRefIterator {
+    /** @return index of the last next() result, undetermined before that */
+    int index();
+  }
+
 }
