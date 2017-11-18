@@ -2860,6 +2860,90 @@ public class StreamExpressionTest extends SolrCloudTestCase {
   }
 
   @Test
+  public void testFacetSandboxStream() throws Exception {
+
+    new UpdateRequest()
+        .add(id, "0", "a_s", "hello0", "a_i", "0", "a_f", "1")
+        .add(id, "2", "a_s", "hello0", "a_i", "2", "a_f", "2")
+        .add(id, "3", "a_s", "hello3", "a_i", "3", "a_f", "3")
+        .add(id, "4", "a_s", "hello4", "a_i", "4", "a_f", "4")
+        .add(id, "1", "a_s", "hello0", "a_i", "1", "a_f", "5")
+        .add(id, "5", "a_s", "hello3", "a_i", "10", "a_f", "6")
+        .add(id, "6", "a_s", "hello4", "a_i", "11", "a_f", "7")
+        .add(id, "7", "a_s", "hello3", "a_i", "12", "a_f", "8")
+        .add(id, "8", "a_s", "hello3", "a_i", "13", "a_f", "9")
+        .add(id, "9", "a_s", "hello0", "a_i", "14", "a_f", "10")
+        .commit(cluster.getSolrClient(), COLLECTIONORALIAS);
+    
+    String clause;
+    TupleStream stream;
+    List<Tuple> tuples;
+    
+    StreamFactory factory = new StreamFactory()
+      .withCollectionZkHost("collection1", cluster.getZkServer().getZkAddress())
+      .withFunctionName("facet", FacetStream.class)
+      .withFunctionName("sum", SumMetric.class)
+      .withFunctionName("min", MinMetric.class)
+      .withFunctionName("max", MaxMetric.class)
+      .withFunctionName("avg", MeanMetric.class)
+      .withFunctionName("count", CountMetric.class)
+      .withFunctionName("parallel", ParallelStream.class);
+    //  
+    // Basic test
+    clause = "facet("
+              +   "collection1, "
+              +   "q=\"*:*\", "
+              +   "sort=\"a_s asc\", "
+              +   "buckets=\"a_s\", "
+              +   "bucketSorts=\"a_s asc\", "
+              +   "bucketSizeLimit=100, "
+              +   "count(*)"
+              + ")";
+    
+    stream = factory.constructStream(clause);
+
+    SolrClientCache solrClientCache = null;
+    try{
+      solrClientCache = new SolrClientCache();
+      StreamContext streamContext = new StreamContext();
+      streamContext.setSolrClientCache(solrClientCache);
+      
+      stream.setStreamContext(streamContext);
+      tuples = getTuples(stream);
+  
+      assert(tuples.size() == 3);
+  
+      //Test Long and Double Sums
+  
+      Tuple tuple = tuples.get(0);
+      String bucket = tuple.getString("a_s");
+      Double count = tuple.getDouble("count(*)");
+      
+      assertTrue(bucket.equals("hello0"));
+      assertTrue(count.doubleValue() == 4);
+
+  
+      tuple = tuples.get(1);
+      bucket = tuple.getString("a_s");
+
+      count = tuple.getDouble("count(*)");
+      
+      assertTrue(bucket.equals("hello3"));
+      assertTrue(count.doubleValue() == 4);
+  
+      tuple = tuples.get(2);
+      bucket = tuple.getString("a_s");
+
+      count = tuple.getDouble("count(*)");
+      assertTrue(bucket.equals("hello4"));
+      assertTrue(count.doubleValue() == 2);
+   
+    } finally {
+      solrClientCache.close();
+    }
+  }
+  
+  @Test
   public void testFacetStream() throws Exception {
 
     new UpdateRequest()
@@ -2905,9 +2989,13 @@ public class StreamExpressionTest extends SolrCloudTestCase {
               + ")";
     
     stream = factory.constructStream(clause);
+    StreamContext context = new StreamContext();
+    SolrClientCache cache = new SolrClientCache();
+    context.setSolrClientCache(cache);
+    stream.setStreamContext(context);
     tuples = getTuples(stream);
 
-    assert(tuples.size() == 3);
+    assertEquals(tuples.toString(), 3,tuples.size());
 
     //Test Long and Double Sums
 

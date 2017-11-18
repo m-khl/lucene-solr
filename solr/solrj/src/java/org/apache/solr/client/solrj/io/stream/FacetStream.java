@@ -20,14 +20,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.impl.CloudSolrClient.Builder;
 import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.io.Tuple;
 import org.apache.solr.client.solrj.io.comp.ComparatorOrder;
@@ -46,6 +48,7 @@ import org.apache.solr.client.solrj.io.stream.expr.StreamFactory;
 import org.apache.solr.client.solrj.io.stream.metrics.Bucket;
 import org.apache.solr.client.solrj.io.stream.metrics.Metric;
 import org.apache.solr.client.solrj.request.QueryRequest;
+import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
@@ -56,7 +59,7 @@ import org.apache.solr.common.util.NamedList;
  * @since 6.0.0
  **/
 
-public class FacetStream extends TupleStream implements Expressible  {
+public class FacetStream extends AbstractCloudStream implements Expressible  {
 
   private static final long serialVersionUID = 1;
 
@@ -64,11 +67,11 @@ public class FacetStream extends TupleStream implements Expressible  {
   private Metric[] metrics;
   private int bucketSizeLimit;
   private FieldComparator[] bucketSorts;
-  private List<Tuple> tuples = new ArrayList<Tuple>();
+  //private List<Tuple> tuples = new ArrayList<Tuple>();
   private int index;
-  private String zkHost;
-  private ModifiableSolrParams params;
-  private String collection;
+  //private String zkHost;
+  //private ModifiableSolrParams params;
+  //private String collection;
   protected transient SolrClientCache cache;
   protected transient CloudSolrClient cloudSolrClient;
 
@@ -311,7 +314,7 @@ public class FacetStream extends TupleStream implements Expressible  {
     return explanation;
   }
   
-  public void setStreamContext(StreamContext context) {
+  /*public void setStreamContext(StreamContext context) {
     cache = context.getSolrClientCache();
   }
 
@@ -364,14 +367,14 @@ public class FacetStream extends TupleStream implements Expressible  {
       return tuple;
     }
   }
-
+*/
   private String getJsonFacetString(Bucket[] _buckets, Metric[] _metrics, FieldComparator[] _sorts, int _limit) {
     StringBuilder buf = new StringBuilder();
     appendJson(buf, _buckets, _metrics, _sorts, _limit, 0);
     return "{"+buf.toString()+"}";
   }
 
-  private FieldComparator[] adjustSorts(Bucket[] _buckets, FieldComparator[] _sorts) throws IOException {
+  private FieldComparator[] adjustSorts(Bucket[] _buckets, FieldComparator[] _sorts) {
     if(_buckets.length == _sorts.length) {
       return _sorts;
     } else if(_sorts.length == 1) {
@@ -389,7 +392,7 @@ public class FacetStream extends TupleStream implements Expressible  {
       }
       return adjustedSorts;
     } else {
-      throw new IOException("If multiple sorts are specified there must be a sort for each bucket.");
+      throw new IllegalArgumentException("If multiple sorts are specified there must be a sort for each bucket.");
     }
   }
 
@@ -447,19 +450,21 @@ public class FacetStream extends TupleStream implements Expressible  {
     return "index";
   }
 
-  private void getTuples(NamedList response,
+  private List<Tuple> getTuples(NamedList response,
                                 Bucket[] buckets,
                                 Metric[] metrics) {
 
     Tuple tuple = new Tuple(new HashMap());
     NamedList facets = (NamedList)response.get("facets");
+    ArrayList<Tuple> output = new ArrayList<Tuple>();
     fillTuples(0,
-               tuples,
+          output,
+               //tuples,
                tuple,
                facets,
                buckets,
                metrics);
-
+    return output;
   }
 
   private void fillTuples(int level,
@@ -529,4 +534,107 @@ public class FacetStream extends TupleStream implements Expressible  {
       return bucketSorts[0];
     }
   }
+
+  @Override
+  protected TupleStream createShardStream(String shardUrl, ModifiableSolrParams mParams) {
+
+    SolrStream solrStream = new SolrStream(shardUrl, mParams) {
+      @Override
+      public TupleStreamParser constructParser(SolrClient server, SolrParams requestParams)
+          throws IOException, SolrServerException {
+        
+        FieldComparator[] adjustedSorts = adjustSorts(buckets, bucketSorts);
+        String json = getJsonFacetString(buckets, metrics, adjustedSorts, bucketSizeLimit);
+
+        ModifiableSolrParams paramsLoc = new ModifiableSolrParams(requestParams);
+        paramsLoc.set("json.facet", json);
+        paramsLoc.set("rows", "0");
+        
+        QueryRequest request = new QueryRequest(paramsLoc);
+        //try {
+          NamedList response = paramsLoc.getBool(CommonParams.DISTRIB, true) ?
+              server.request(request, collection) : server.request(request);
+          final List<Tuple> allTuples = getTuples(response, buckets, metrics);
+          Collections.sort(allTuples, FacetStream.this.getStreamSort());
+          return new TupleStreamParser() {
+            
+            final Iterator<Tuple> iter = allTuples.iterator();
+            
+            @Override
+            public void close() throws IOException {
+              
+            }
+            
+            @Override
+            public Map<String,Object> next() throws IOException {
+              return iter.hasNext() ? iter.next().getMap(): null;
+            }
+          };
+
+        //return super.constructParser(server, paramsLoc);
+      }
+    };
+    
+    solrStream.setFieldMappings(new HashMap<>());
+    return solrStream;
+  }
+  @Override
+  void openStreams() throws IOException {
+    StreamComparator tupleCmp = getStreamSort();
+    /*tuples=new TreeSet<>(new Comparator<TupleWrapper>() {
+
+      @Override
+      public int compare(TupleWrapper o1, TupleWrapper o2) {
+        return tupleCmp.compare(o1.getTuple(), o2.getTuple());
+      }
+      
+    });*/
+    super.openStreams();
+  }
+  
+  
+  private Tuple mergeTuple;
+  private boolean over = false;
+  
+  @Override
+  protected Tuple _read() throws IOException {
+    do {
+    if(over) {
+        Tuple t = mergeTuple;
+        mergeTuple = null;
+        return t;
+    } else {
+      Tuple cur = super._read();
+      System.out.println(cur.getMap());
+      if (cur.EOF || cur.EXCEPTION) {
+        Tuple t = mergeTuple;
+        mergeTuple = cur;
+        over = true;
+        return t;
+      } else {
+         if (mergeTuple==null) {
+           mergeTuple = cur;
+         } else {
+            if(getStreamSort().compare(mergeTuple, cur)==0) {
+              assert mergeTuple.getMap().size()==cur.getMap().size() : ""+mergeTuple.getMap()+" vs "+cur.getMap();
+              for(Object field : cur.getMap().keySet()) {
+                Object old = mergeTuple.getMap().get(field);
+                Object nwe = cur.getMap().get(field);
+                if (old instanceof Number && nwe instanceof Number) {
+                  mergeTuple.getMap().put(field, ((Number)old).longValue()+((Number)nwe).longValue());
+                }
+              }
+            }else {
+              Tuple t = mergeTuple;
+              mergeTuple = cur;
+              return t;
+            }
+         }
+      }
+      
+    }
+    }while(true);
+  }
 }
+
+
