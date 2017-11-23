@@ -633,4 +633,5 @@
   <!-- dynamic destination -->
   <copyField source="*_dynamic" dest="dynamic_*"/>
 
+  <dynamicField name="metric_*" type="int" indexed="false" stored="false" docValues="true" multiValued="false"/>
 </schema>

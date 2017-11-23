@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -4145,6 +4146,91 @@ public class StreamExpressionTest extends SolrCloudTestCase {
     }
   }
 
+  @Test
+  public void testRollupToCollection() throws Exception {
+    CollectionAdminRequest.createCollection("parallelDestinationCollection", "conf", 2, 1).process(cluster.getSolrClient());
+    AbstractDistribZkTestBase.waitForRecoveriesToFinish("parallelDestinationCollection", cluster.getSolrClient().getZkStateReader(),
+        false, true, TIMEOUT);
+
+    new UpdateRequest()
+        .add(id, "0", "a_s", "hello0"/*, "a_i", "0", "a_f", "0", "s_multi", "aaaa", "s_multi", "bbbb", "i_multi", "4", "i_multi", "7"*/)
+        .add(id, "2", "a_s", "hello2"/*, "a_i", "2", "a_f", "0", "s_multi", "aaaa1", "s_multi", "bbbb1", "i_multi", "44", "i_multi", "77"*/)
+        .add(id, "3", "a_s", "hello3"/*, "a_i", "3", "a_f", "3", "s_multi", "aaaa2", "s_multi", "bbbb2", "i_multi", "444", "i_multi", "777"*/)
+        .add(id, "4", "a_s", "hello4"/*, "a_i", "4", "a_f", "4", "s_multi", "aaaa3", "s_multi", "bbbb3", "i_multi", "4444", "i_multi", "7777"*/)
+        .add(id, "1", "a_s", "hello1"/*, "a_i", "1", "a_f", "1", "s_multi", "aaaa4", "s_multi", "bbbb4", "i_multi", "44444", "i_multi", "77777"*/)
+        
+        .add(id, "5", "a_s", "hello2"/*, "a_i", "2", "a_f", "0", "s_multi", "aaaa1", "s_multi", "bbbb1", "i_multi", "44", "i_multi", "77"*/)
+        .add(id, "6", "a_s", "hello3"/*, "a_i", "3", "a_f", "3", "s_multi", "aaaa2", "s_multi", "bbbb2", "i_multi", "444", "i_multi", "777"*/)
+        .add(id, "7", "a_s", "hello4"/*, "a_i", "4", "a_f", "4", "s_multi", "aaaa3", "s_multi", "bbbb3", "i_multi", "4444", "i_multi", "7777"*/)
+        
+        .add(id, "8", "a_s", "hello3"/*, "a_i", "3", "a_f", "3", "s_multi", "aaaa2", "s_multi", "bbbb2", "i_multi", "444", "i_multi", "777"*/)
+        .add(id, "9", "a_s", "hello4"/*, "a_i", "4", "a_f", "4", "s_multi", "aaaa3", "s_multi", "bbbb3", "i_multi", "4444", "i_multi", "7777"*/)
+        
+        .add(id, "10", "a_s", "hello4"/*, "a_i", "4", "a_f", "4", "s_multi", "aaaa3", "s_multi", "bbbb3", "i_multi", "4444", "i_multi", "7777"*/)
+        .commit(cluster.getSolrClient(), "collection1");
+    
+    StreamExpression expression;
+    TupleStream stream;
+    Tuple t;
+    StreamContext streamContext = new StreamContext();
+    SolrClientCache solrClientCache = new SolrClientCache();
+    streamContext.setSolrClientCache(solrClientCache);
+    
+    String zkHost = cluster.getZkServer().getZkAddress();
+    StreamFactory factory = new StreamFactory()
+      .withCollectionZkHost("collection1", cluster.getZkServer().getZkAddress())
+      .withCollectionZkHost("parallelDestinationCollection", cluster.getZkServer().getZkAddress())
+      .withFunctionName("search", CloudSolrStream.class)
+      .withFunctionName("updateRollup", RollupUpdateStream.class)
+      .withFunctionName("parallel", ParallelStream.class);
+
+    try {
+      //Copy all docs to destinationCollection
+      String updateExpression = "updateRollup(parallelDestinationCollection, batchSize=2, "
+          + "search(collection1, q=*:*, fl=\"id,a_s,a_i,a_f,s_multi,i_multi\", sort=\"a_f asc, a_i asc\"),"//, partitionKeys=\"a_f\"
+          + "over=\"a_s\")";
+      TupleStream parallelUpdateStream = factory.constructStream(//"parallel(collection1, " +
+          updateExpression //+ ", workers=\"2\", zkHost=\"" + zkHost + "\", sort=\"batchNumber asc\")"
+          );
+      parallelUpdateStream.setStreamContext(streamContext);
+      List<Tuple> tuples = getTuples(parallelUpdateStream);
+      cluster.getSolrClient().commit("parallelDestinationCollection",true,true,true);
+      //Ensure that all UpdateStream tuples indicate the correct number of copied/indexed docs
+      //assertEquals (""+tuples,3, tuples.size() );
+      t = tuples.get(0);
+      assertFalse(t.EOF);
+      //assertEquals(5, t.get("batchIndexed"));
+      
+      //Ensure that destinationCollection actually has the new docs.
+      expression = StreamExpressionParser.parse("search(parallelDestinationCollection, q=*:*, fl=\"id,*\", sort=\"id asc\")");
+      stream = new CloudSolrStream(expression, factory);
+      stream.setStreamContext(streamContext);
+      tuples = getTuples(stream);
+      assertEquals(5, tuples.size());
+
+      Iterator<Tuple> iter = tuples.iterator();
+      Tuple tuple = iter.next();
+      assertEquals("hello0",tuple.getString("id"));
+      assertEquals("1",tuple.getString("metric_count(*)"));
+      tuple = iter.next();
+      assertEquals("hello1",tuple.getString("id"));
+      assertEquals("1",tuple.getString("metric_count(*)"));
+      tuple = iter.next();
+      assertEquals("hello2",tuple.getString("id"));
+      assertEquals("2",tuple.getString("metric_count(*)"));
+      tuple = iter.next();
+      assertEquals("hello3",tuple.getString("id"));
+      assertEquals("3",tuple.getString("metric_count(*)"));
+      tuple = iter.next();
+      assertEquals("hello4",tuple.getString("id"));
+      assertEquals(tuple+"","4",tuple.getString("metric_count(*)"));
+      assertFalse(iter.hasNext());
+    } finally {
+      CollectionAdminRequest.deleteCollection("parallelDestinationCollection").process(cluster.getSolrClient());
+      solrClientCache.close();
+    }
+  }
+  
   @Test
   public void testParallelDaemonUpdateStream() throws Exception {
 

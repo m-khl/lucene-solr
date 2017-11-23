@@ -268,7 +268,7 @@ public class UpdateStream extends TupleStream implements Expressible {
     }
   }
   
-  private SolrInputDocument convertTupleToSolrDocument(Tuple tuple) {
+  protected SolrInputDocument convertTupleToSolrDocument(Tuple tuple) {
     SolrInputDocument doc = new SolrInputDocument();
     for (Object field : tuple.fields.keySet()) {
       if (! field.equals(VERSION_FIELD)) {
